@@ -35,6 +35,18 @@ spec:
           - "--storage.tsdb.path=/prometheus"
         ports:
           - containerPort: 9090
+        livenessProbe:
+          httpGet:
+            path: /-/healthy
+            port: 9090
+        readinessProbe:
+          httpGet:
+            path: /-/ready
+            port: 9090
+        resources:
+          limits:
+            cpu: 200m
+            memory: 256Mi
         volumeMounts:
           - name: config-volume
             mountPath: /etc/prometheus
@@ -50,6 +62,18 @@ spec:
             containerPort: 10901
           - name: http
             containerPort: 10902
+        livenessProbe:
+          httpGet:
+            path: /-/healthy
+            port: http
+        readinessProbe:
+          httpGet:
+            path: /-/ready
+            port: http
+        resources:
+          limits:
+            cpu: 200m
+            memory: 256Mi
       volumes:
         - name: config-volume
           configMap:

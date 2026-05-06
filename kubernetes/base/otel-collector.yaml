@@ -17,7 +17,10 @@ data:
         endpoint: "0.0.0.0:8889"
       logging:
         verbosity: detailed
+    extensions:
+      health_check:
     service:
+      extensions: [health_check]
       telemetry:
         metrics:
           level: detailed
@@ -53,6 +56,19 @@ spec:
         - containerPort: 4318
         - containerPort: 8888
         - containerPort: 8889
+        - containerPort: 13133
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 13133
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 13133
+        resources:
+          limits:
+            cpu: 200m
+            memory: 256Mi
         volumeMounts:
         - name: config-volume
           mountPath: /etc/otelcol-contrib/
