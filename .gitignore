@@ -1,0 +1,12 @@
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate*
+*.tfvars
+__pycache__/
+.vscode/
+.idea/
+*.swp
+.DS_Store
+kubeconfig*
+.env
+secrets/
