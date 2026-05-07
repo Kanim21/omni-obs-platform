@@ -1,11 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: omni-obs
+
 resources:
   - ../../base
 
+components:
+  - ../../components/edge
+
 labels:
-- includeSelectors: true
-  pairs:
-    cluster: cluster-aws
-    cloud: aws
+  - includeSelectors: false
+    pairs:
+      cluster: cluster-aws
+      cloud: aws
 
 patches:
   - target:
@@ -17,9 +24,17 @@ patches:
         value: |
           global:
             scrape_interval: 15s
+            evaluation_interval: 15s
             external_labels:
               cluster: cluster-aws
+              cloud: aws
           scrape_configs:
             - job_name: 'otel-collector'
               static_configs:
                 - targets: ['otel-collector:8889']
+            - job_name: 'otel-collector-self'
+              static_configs:
+                - targets: ['otel-collector:8888']
+            - job_name: 'prometheus-self'
+              static_configs:
+                - targets: ['localhost:9090']

@@ -1,12 +1,32 @@
+# Terraform
 .terraform/
 .terraform.lock.hcl
 terraform.tfstate*
 *.tfvars
+*.tfplan
+
+# Python
 __pycache__/
+
+# IDE
 .vscode/
 .idea/
 *.swp
+*.swo
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Kubernetes
 kubeconfig*
+
+# Secrets / env
 .env
+.env.*
 secrets/
+
+# Build / temp
+/tmp/
+*.log
+*.bak

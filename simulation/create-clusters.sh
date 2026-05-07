@@ -1,74 +1,16 @@
-#!/bin/bash
-# Create 3 local Kubernetes clusters simulating AWS, Azure, GCP
+#!/usr/bin/env bash
+# DEPRECATED: this script created only the 3 edge clusters. The demo now also
+# requires a 4th 'cluster-central' for Thanos Query and Grafana.
+# Use scripts/create-clusters.sh instead, or just `make demo` for end-to-end.
 
-set -e
+cat <<EOF
+This script has been replaced by scripts/create-clusters.sh, which provisions
+all four kind clusters (3 edges + 1 central) needed by the demo.
 
-echo "🚀 Creating 3 simulated cloud clusters..."
+Run instead:
 
-# AWS-simulated cluster config
-cat > /tmp/cluster-aws.yaml << 'KIND'
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-name: cluster-aws
-nodes:
-- role: control-plane
-  labels:
-    cloud-provider: aws
-    region: us-east-1
-- role: worker
-  labels:
-    cloud-provider: aws
-    region: us-east-1
-- role: worker
-  labels:
-    cloud-provider: aws
-    region: us-east-1
-KIND
+  scripts/create-clusters.sh   # just the clusters
+  make demo                    # clusters + deploy + verify
 
-# Azure-simulated cluster config
-cat > /tmp/cluster-azure.yaml << 'KIND'
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-name: cluster-azure
-nodes:
-- role: control-plane
-  labels:
-    cloud-provider: azure
-    region: eastus
-- role: worker
-  labels:
-    cloud-provider: azure
-    region: eastus
-KIND
-
-# GCP-simulated cluster config
-cat > /tmp/cluster-gcp.yaml << 'KIND'
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-name: cluster-gcp
-nodes:
-- role: control-plane
-  labels:
-    cloud-provider: gcp
-    region: us-central1
-- role: worker
-  labels:
-    cloud-provider: gcp
-    region: us-central1
-KIND
-
-# Create the clusters
-kind create cluster --config /tmp/cluster-aws.yaml
-kind create cluster --config /tmp/cluster-azure.yaml
-kind create cluster --config /tmp/cluster-gcp.yaml
-
-echo "✅ All 3 clusters created!"
-echo ""
-echo "📋 List all contexts:"
-kubectl config get-contexts
-
-echo ""
-echo "🔄 Switch between clusters:"
-echo "  kubectl config use-context kind-cluster-aws"
-echo "  kubectl config use-context kind-cluster-azure"
-echo "  kubectl config use-context kind-cluster-gcp"
+EOF
+exit 1

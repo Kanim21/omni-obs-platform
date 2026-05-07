@@ -1,0 +1,12 @@
+checks:
+  addAllBuiltIn: true
+  exclude:
+    # The Grafana ConfigMaps are large by design (dashboard JSON inside).
+    - "no-extensions-v1beta"
+    # We don't pin minor versions of every public image — operationally we'd
+    # do this with a registry mirror + image policy controller, not lint.
+    - "no-anti-affinity"
+    # Single-replica deployments are intentional in the demo.
+    - "minimum-three-replicas"
+    # Demo runs without networkpolicies for simplicity. ADR captures this.
+    - "default-deny-network-policy"

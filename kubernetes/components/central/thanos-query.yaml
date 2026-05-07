@@ -1,0 +1,80 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: thanos-query
+  namespace: omni-obs
+  labels:
+    app: thanos-query
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: thanos-query
+  template:
+    metadata:
+      labels:
+        app: thanos-query
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: thanos-query
+          image: thanosio/thanos:v0.34.1
+          args:
+            - query
+            - --grpc-address=0.0.0.0:10901
+            - --http-address=0.0.0.0:9090
+            # --query.replica-label would be added here for HA Prometheus pairs.
+            # We don't dedupe on `cluster` — that's the dimension we want to
+            # *preserve* across the federation.
+            # --endpoint flags are appended by the central overlay.
+          ports:
+            - name: http
+              containerPort: 9090
+            - name: grpc
+              containerPort: 10901
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http
+            initialDelaySeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: http
+            initialDelaySeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: thanos-query
+  namespace: omni-obs
+  labels:
+    app: thanos-query
+spec:
+  type: ClusterIP
+  selector:
+    app: thanos-query
+  ports:
+    - name: http
+      port: 9090
+      targetPort: http
+    - name: grpc
+      port: 10901
+      targetPort: grpc

@@ -1,0 +1,194 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: omni-obs
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Thanos
+        type: prometheus
+        access: proxy
+        url: http://thanos-query:9090
+        isDefault: true
+        editable: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-provider
+  namespace: omni-obs
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: 'omni-obs'
+        orgId: 1
+        folder: 'Omni-Obs'
+        type: file
+        disableDeletion: true
+        editable: false
+        options:
+          path: /var/lib/grafana/dashboards
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: omni-obs
+data:
+  multi-cluster-overview.json: |
+    {
+      "title": "Multi-Cluster Overview",
+      "uid": "omni-obs-overview",
+      "schemaVersion": 39,
+      "tags": ["omni-obs"],
+      "timezone": "browser",
+      "time": { "from": "now-30m", "to": "now" },
+      "refresh": "10s",
+      "panels": [
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "OTLP metrics ingested per cluster (rate)",
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+          "targets": [
+            {
+              "expr": "sum by (cluster) (rate(otelcol_receiver_accepted_metric_points{job=\"otel-collector-self\"}[1m]))",
+              "legendFormat": "{{cluster}}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Active clusters reporting",
+          "gridPos": { "h": 6, "w": 8, "x": 0, "y": 10 },
+          "targets": [
+            {
+              "expr": "count(count by (cluster) (up{cluster!=\"\"}))",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "table",
+          "title": "Prometheus targets up by cluster",
+          "gridPos": { "h": 6, "w": 16, "x": 8, "y": 10 },
+          "targets": [
+            {
+              "expr": "sum by (cluster, job) (up)",
+              "format": "table",
+              "instant": true,
+              "refId": "A"
+            }
+          ]
+        }
+      ]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: omni-obs
+  labels:
+    app: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 472
+        runAsGroup: 472
+        fsGroup: 472
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: grafana
+          image: grafana/grafana:10.4.2
+          env:
+            # Demo-only credentials — see SECURITY.md for production guidance.
+            - name: GF_SECURITY_ADMIN_USER
+              value: admin
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              value: admin
+            - name: GF_AUTH_ANONYMOUS_ENABLED
+              value: "true"
+            - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+              value: Viewer
+            - name: GF_USERS_ALLOW_SIGN_UP
+              value: "false"
+          ports:
+            - name: http
+              containerPort: 3000
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: dashboards-provider
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: dashboards
+              mountPath: /var/lib/grafana/dashboards
+            - name: storage
+              mountPath: /var/lib/grafana
+      volumes:
+        - name: datasources
+          configMap:
+            name: grafana-datasources
+        - name: dashboards-provider
+          configMap:
+            name: grafana-dashboards-provider
+        - name: dashboards
+          configMap:
+            name: grafana-dashboards
+        - name: storage
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: omni-obs
+  labels:
+    app: grafana
+spec:
+  type: NodePort
+  selector:
+    app: grafana
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+      nodePort: 30300
