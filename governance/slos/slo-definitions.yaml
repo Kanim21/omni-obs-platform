@@ -1,0 +1,98 @@
+# SLO definitions for the Omni-Obs platform itself.
+#
+# These describe the platform's own reliability — i.e. how reliably the
+# observability stack delivers metrics from edge to central. Workload SLOs
+# (for the apps being observed) belong with those workloads.
+#
+# Format inspired by Sloth (https://sloth.dev) and SRE workbook examples.
+
+apiVersion: omni-obs/v1
+kind: ServiceLevelObjectives
+metadata:
+  service: omni-obs-platform
+
+slos:
+  # ---------------------------------------------------------------------------
+  - name: ingestion-availability
+    description: >
+      OTel Collector at each edge accepts OTLP exports without erroring.
+      Failure means the agents/SDKs immediately retry; sustained failure
+      means data is dropped.
+    objective: 99.9
+    window: 30d
+    sli:
+      good: |
+        sum(rate(otelcol_receiver_accepted_metric_points{
+          job="otel-collector-self"
+        }[5m]))
+      bad: |
+        sum(rate(otelcol_receiver_refused_metric_points{
+          job="otel-collector-self"
+        }[5m]))
+    burn_rate_alerts:
+      page: 14.4    # 2% budget burn in 1h => page
+      ticket: 6     # 5% budget burn in 6h => ticket
+
+  # ---------------------------------------------------------------------------
+  - name: federation-freshness
+    description: >
+      Metrics emitted at any edge are queryable via the central Thanos Query
+      within 60 seconds. Measured as the lag between scrape time and
+      query-visible time, sampled every 30s.
+    objective: 99
+    window: 30d
+    sli:
+      good: |
+        sum(rate(thanos_objstore_bucket_last_successful_upload_time_seconds[5m]))
+      # Actual SLI in production would use a synthetic probe metric injected
+      # at edge with a known timestamp and queried at central; the above is a
+      # placeholder to keep the example self-contained.
+
+  # ---------------------------------------------------------------------------
+  - name: query-success-rate
+    description: >
+      Thanos Query returns a non-error response for 99.5% of API calls.
+    objective: 99.5
+    window: 30d
+    sli:
+      good: |
+        sum(rate(http_requests_total{
+          job="thanos-query",
+          code=~"2..|3.."
+        }[5m]))
+      bad: |
+        sum(rate(http_requests_total{
+          job="thanos-query",
+          code=~"5.."
+        }[5m]))
+
+  # ---------------------------------------------------------------------------
+  - name: query-latency-p99
+    description: >
+      99th-percentile query latency under 5 seconds for instant queries.
+    objective: 99
+    window: 30d
+    threshold_seconds: 5
+    sli:
+      good: |
+        sum(rate(http_request_duration_seconds_bucket{
+          job="thanos-query",
+          handler="/api/v1/query",
+          le="5"
+        }[5m]))
+      total: |
+        sum(rate(http_request_duration_seconds_count{
+          job="thanos-query",
+          handler="/api/v1/query"
+        }[5m]))
+
+# ---------------------------------------------------------------------------
+# Notes on choosing these targets:
+#
+# - 99.9% availability over 30d = ~43m of error budget. Reasonable for a
+#   non-customer-facing platform that engineers can tolerate degradation in.
+# - Freshness at 60s and p99 latency at 5s match what dashboards and alerts
+#   actually need. Tighter targets would be vanity; looser would degrade
+#   the platform's usefulness.
+# - Burn-rate alerts use the multi-window multi-burn-rate pattern from the
+#   SRE workbook (chapter 5). 14.4x for a fast page, 6x for a slow ticket.

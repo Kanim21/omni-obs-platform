@@ -1,0 +1,47 @@
+---
+# A tiny load generator that emits OTLP metrics to the collector continuously.
+# Without this, edge clusters have an empty pipeline and the demo shows no data.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telemetrygen
+  namespace: omni-obs
+  labels:
+    app: telemetrygen
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: telemetrygen
+  template:
+    metadata:
+      labels:
+        app: telemetrygen
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: telemetrygen
+          image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:v0.96.0
+          args:
+            - "metrics"
+            - "--otlp-endpoint=otel-collector:4317"
+            - "--otlp-insecure"
+            - "--rate=10"
+            - "--duration=8760h"  # one year — effectively forever for the demo
+            - "--metrics=20"
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

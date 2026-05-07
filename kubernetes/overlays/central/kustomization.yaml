@@ -1,0 +1,30 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: omni-obs
+
+resources:
+  - ../../base
+
+components:
+  - ../../components/central
+
+labels:
+  - includeSelectors: false
+    pairs:
+      cluster: cluster-central
+      role: query-tier
+
+patches:
+  - target:
+      kind: Deployment
+      name: thanos-query
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --endpoint=__AWS_SIDECAR_ENDPOINT__
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --endpoint=__AZURE_SIDECAR_ENDPOINT__
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --endpoint=__GCP_SIDECAR_ENDPOINT__

@@ -1,0 +1,35 @@
+name: Bug report
+description: Something doesn't work the way the docs say it should.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the bug. What did you run, what did you expect, what did you get instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. `make demo`
+        2. ...
+        3. Error: ...
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: Output of `kind version`, `kubectl version --client`, `kustomize version`, `docker info | grep "Server Version"`.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Attach pod logs, kubectl describe output, or terminal output. Paste between fences.
+      render: shell
