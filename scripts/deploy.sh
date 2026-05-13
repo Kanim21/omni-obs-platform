@@ -32,15 +32,15 @@ for cloud in "${EDGES[@]}"; do
 done
 
 log_step "Discovering edge sidecar endpoints"
-declare -A ENDPOINT
 for cloud in "${EDGES[@]}"; do
   CLUSTER="cluster-$cloud"
   IP="$(kind_node_ip "$CLUSTER")"
   if [[ -z "$IP" ]]; then
     die "could not discover Docker IP for $CLUSTER"
   fi
-  ENDPOINT[$cloud]="$IP:$SIDECAR_NODEPORT"
-  log_info "  $cloud -> ${ENDPOINT[$cloud]}"
+  printf -v "ENDPOINT_${cloud}" '%s' "$IP:$SIDECAR_NODEPORT"
+  ep_var="ENDPOINT_${cloud}"
+  log_info "  $cloud -> ${!ep_var}"
 done
 
 log_step "Rendering central overlay with discovered endpoints"
@@ -49,9 +49,9 @@ trap 'rm -rf "$RENDER_DIR"' EXIT
 cp -R "$REPO_ROOT/kubernetes" "$RENDER_DIR/"
 CENTRAL_KUST="$RENDER_DIR/kubernetes/overlays/central/kustomization.yaml"
 sed -i.bak \
-  -e "s|__AWS_SIDECAR_ENDPOINT__|${ENDPOINT[aws]}|g" \
-  -e "s|__AZURE_SIDECAR_ENDPOINT__|${ENDPOINT[azure]}|g" \
-  -e "s|__GCP_SIDECAR_ENDPOINT__|${ENDPOINT[gcp]}|g" \
+  -e "s|__AWS_SIDECAR_ENDPOINT__|${ENDPOINT_aws}|g" \
+  -e "s|__AZURE_SIDECAR_ENDPOINT__|${ENDPOINT_azure}|g" \
+  -e "s|__GCP_SIDECAR_ENDPOINT__|${ENDPOINT_gcp}|g" \
   "$CENTRAL_KUST"
 rm -f "$CENTRAL_KUST.bak"
 

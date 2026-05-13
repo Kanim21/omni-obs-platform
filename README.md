@@ -5,6 +5,16 @@
 [![CI](https://github.com/Kanim21/omni-obs-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/Kanim21/omni-obs-platform/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+## Demo
+
+Grafana — multi-cluster ingestion rates broken down by cloud region:
+
+![Grafana multi-cluster dashboard](docs/images/grafana-multi-cluster.png)
+
+Thanos Query Stores — all three edge sidecars connected with no errors:
+
+![Thanos stores showing aws, azure, gcp sidecars](docs/images/thanos-stores.png)
+
 ## What this is
 
 A demo of the **federated tiered-storage** pattern for multi-cluster observability. Each "edge" cluster runs its own ingestion and storage stack; a separate "central" cluster aggregates them via Thanos's StoreAPI. Querying any metric returns a unified, deduplicated view across all clusters.
@@ -151,3 +161,7 @@ CI (`.github/workflows/ci.yml`) runs `make validate` on every push and PR.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+---
+
+_Last verified working: 2026-05-13 · macOS 26.2 · Docker 29.3.1 · kind v0.31.0 · kubectl v1.36.0 · kustomize v5.8.1_
