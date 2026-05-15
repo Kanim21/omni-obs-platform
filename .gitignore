@@ -30,3 +30,5 @@ secrets/
 /tmp/
 *.log
 *.bak
+.claude/
+*.zip
