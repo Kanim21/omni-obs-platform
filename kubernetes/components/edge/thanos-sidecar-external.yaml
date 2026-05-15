@@ -1,0 +1,21 @@
+---
+# NodePort exposes the sidecar's gRPC port to the kind host network so the
+# central querier (running in a separate kind cluster) can reach it.
+# In real multi-cloud, replace this with a private LoadBalancer + mTLS.
+apiVersion: v1
+kind: Service
+metadata:
+  name: thanos-sidecar-external
+  namespace: omni-obs
+  labels:
+    app: prometheus
+    component: thanos-sidecar
+spec:
+  type: NodePort
+  selector:
+    app: prometheus
+  ports:
+    - name: grpc
+      port: 10901
+      targetPort: grpc
+      nodePort: 31901

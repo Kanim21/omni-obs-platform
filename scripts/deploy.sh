@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
-# Deploy the observability stack:
-#   - Each edge cluster gets OTel Collector + Prometheus + Thanos sidecar + load gen
-#   - The central cluster gets Thanos Query + Grafana, configured to connect to
-#     each edge sidecar's NodePort over the kind Docker network.
+# Deploy the observability stack.
+#
+# Default (multi-cluster): each edge cluster gets OTel Collector + Prometheus +
+#   Thanos sidecar + load gen; the central cluster gets Thanos Query + Grafana,
+#   configured to connect to each edge sidecar's NodePort over the kind Docker
+#   network.
+#
+# Single-cluster mode (--single): all components land in cluster-local.
+#   Thanos querier talks to the sidecar in the same cluster; MinIO provides
+#   object storage for block shipping.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,6 +16,48 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
 require_cmds kubectl kustomize docker
+
+MODE=multi
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --single) MODE=single; shift ;;
+    *) die "Unknown flag: $1 (supported: --single)" ;;
+  esac
+done
+
+if [[ "$MODE" == single ]]; then
+  CTX=kind-cluster-local
+  OVERLAY="$REPO_ROOT/kubernetes/overlays/single"
+
+  log_step "Deploying single-cluster stack to $CTX"
+  kubectl --context "$CTX" apply -k "$OVERLAY"
+
+  log_step "Waiting for workloads"
+  kubectl config use-context "$CTX" >/dev/null
+  for d in otel-collector prometheus minio thanos-query grafana; do
+    wait_deployment omni-obs "$d" 300s
+  done
+
+  log_step "Done"
+  cat <<EOF
+
+Deployment complete (single-cluster).
+
+Grafana:       http://localhost:3000  (anonymous viewer; login: admin / admin)
+
+Thanos UI:
+  kubectl --context $CTX -n omni-obs port-forward svc/thanos-query 9090:9090
+  open http://localhost:9090/stores   # should list one sidecar
+
+MinIO console (optional):
+  kubectl --context $CTX -n omni-obs port-forward svc/minio 9001:9001
+  open http://localhost:9001          # login: minio / minio123
+
+Tear down:  make clean-single
+
+EOF
+  exit 0
+fi
 
 EDGES=(aws azure gcp)
 SIDECAR_NODEPORT=31901  # see kubernetes/components/edge/prometheus.yaml

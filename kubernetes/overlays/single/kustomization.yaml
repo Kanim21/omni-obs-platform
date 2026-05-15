@@ -1,0 +1,40 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: omni-obs
+
+resources:
+  - ../../base
+
+components:
+  - ../../components/thanos
+  - ../../components/minio
+
+labels:
+  - includeSelectors: false
+    pairs:
+      cluster: cluster-local
+
+patches:
+  # Inject cluster identity so Thanos can label and deduplicate time series.
+  - target:
+      kind: ConfigMap
+      name: prometheus-config
+    patch: |-
+      - op: replace
+        path: /data/prometheus.yml
+        value: |
+          global:
+            scrape_interval: 15s
+            evaluation_interval: 15s
+            external_labels:
+              cluster: cluster-local
+          scrape_configs:
+            - job_name: 'otel-collector'
+              static_configs:
+                - targets: ['otel-collector:8889']
+            - job_name: 'otel-collector-self'
+              static_configs:
+                - targets: ['otel-collector:8888']
+            - job_name: 'prometheus-self'
+              static_configs:
+                - targets: ['localhost:9090']

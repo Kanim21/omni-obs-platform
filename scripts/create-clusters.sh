@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
-# Create the four kind clusters used by the demo:
-#   - cluster-aws, cluster-azure, cluster-gcp — edge clusters
-#   - cluster-central                          — query-tier + Grafana
+# Create the kind clusters used by the demo.
+#
+# Default (multi-cluster): four clusters — cluster-aws, cluster-azure,
+#   cluster-gcp (edge) and cluster-central (query-tier + Grafana).
+#
+# Single-cluster mode (--single): one cluster — cluster-local — with the
+#   full stack co-located. Fits comfortably in 5 GB Docker memory.
+#
 # Idempotent: skips clusters that already exist.
 set -euo pipefail
 
@@ -9,6 +14,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
 require_cmds kind docker
+
+MODE=multi
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --single) MODE=single; shift ;;
+    *) die "Unknown flag: $1 (supported: --single)" ;;
+  esac
+done
 
 log_step "Creating kind clusters"
 
@@ -68,6 +81,33 @@ nodes:
 EOF
   echo "$TMP/cluster-central.yaml"
 }
+
+# Single cluster — full stack on one node. Exposes Grafana on host port 3000.
+# Designed for machines with ~5 GB Docker memory (e.g. 8 GB laptop).
+make_single_config() {
+  cat >"$TMP/cluster-local.yaml" <<'EOF'
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: cluster-local
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30300
+        hostPort: 3000
+        protocol: TCP
+EOF
+  echo "$TMP/cluster-local.yaml"
+}
+
+if [[ "$MODE" == single ]]; then
+  create_if_missing cluster-local "$(make_single_config)"
+  log_step "Cluster contexts"
+  kubectl config get-contexts | grep 'kind-cluster-local' || kubectl config get-contexts
+  log_ok "Single cluster is ready."
+  log_info "Deploy with:  ./scripts/deploy.sh --single"
+  log_info "Or run:       make demo-single"
+  exit 0
+fi
 
 create_if_missing cluster-aws     "$(make_edge_config cluster-aws     aws    us-east-1)"
 create_if_missing cluster-azure   "$(make_edge_config cluster-azure   azure  eastus)"

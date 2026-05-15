@@ -1,0 +1,29 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - minio.yaml
+  - minio-credentials-secret.yaml
+  - objstore-secret.yaml
+patches:
+  # Wire the Thanos sidecar (containers[1] in the prometheus Deployment) to
+  # ship TSDB blocks to MinIO. The Secret mount avoids embedding credentials
+  # in the Deployment spec.
+  - target:
+      kind: Deployment
+      name: prometheus
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/1/args/-
+        value: --objstore.config-file=/etc/thanos/bucket.yaml
+      - op: add
+        path: /spec/template/spec/containers/1/volumeMounts/-
+        value:
+          name: objstore-config
+          mountPath: /etc/thanos
+          readOnly: true
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: objstore-config
+          secret:
+            secretName: thanos-objstore-config
