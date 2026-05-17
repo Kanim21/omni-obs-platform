@@ -2,7 +2,7 @@
 SHELL := /usr/bin/env bash
 
 .PHONY: help preflight clusters deploy verify demo clean validate render fmt \
-        demo-single clean-single
+        demo-single clean-single teardown teardown-single
 
 help: ## Show this help
 	@awk 'BEGIN{FS=":.*?## "} /^[a-zA-Z_-]+:.*?## /{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -41,3 +41,7 @@ render: ## Render all overlays to stdout (sanity check)
 	  echo "===== overlays/$$o ====="; \
 	  kustomize build kubernetes/overlays/$$o; \
 	done
+
+teardown: clean ## Alias for clean — tear down all 4 kind clusters
+
+teardown-single: clean-single ## Alias for clean-single — tear down cluster-local

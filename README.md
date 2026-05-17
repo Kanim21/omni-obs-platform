@@ -7,19 +7,26 @@
 
 ## Demo
 
-Grafana — multi-cluster ingestion rates broken down by cloud region:
+Single-cluster mode — the OTel → Prometheus → Thanos sidecar → MinIO → Thanos Query pipeline running end-to-end on one kind node, fitting comfortably in 5 GiB of Docker memory:
 
-![Grafana multi-cluster dashboard](docs/images/grafana-multi-cluster.png)
+![Grafana single-cluster dashboard](docs/images/grafana-single-cluster.png)
 
-Thanos Query Stores — all three edge sidecars connected with no errors:
+Thanos Query Stores — the local sidecar connected and serving the full retention window:
 
-![Thanos stores showing aws, azure, gcp sidecars](docs/images/thanos-stores.png)
+![Thanos stores showing single-cluster sidecar](docs/images/thanos-stores-single-cluster.png)
+
+Multi-cluster mode (4 kind clusters federated) is also supported — see the `make demo` section below.
 
 ## What this is
 
 A demo of the **federated tiered-storage** pattern for multi-cluster observability. Each "edge" cluster runs its own ingestion and storage stack; a separate "central" cluster aggregates them via Thanos's StoreAPI. Querying any metric returns a unified, deduplicated view across all clusters.
 
-The whole thing runs locally on **four `kind` clusters** in Docker, so you can stand it up on a laptop in a few minutes — no cloud account required. The Kubernetes manifests, overlays, and topology mirror what a real multi-region deployment looks like.
+The whole thing runs locally on **`kind` clusters** in Docker, so you can stand it up on a laptop in a few minutes — no cloud account required. There are two ways to run it:
+
+- **`make demo-single`** — one kind cluster, full pipeline including object storage (MinIO). Fits in 5 GiB Docker memory, suitable for an 8 GiB laptop. **Start here.**
+- **`make demo`** — four kind clusters (3 edge + 1 central) with cross-cluster federation. Needs 8+ GiB Docker memory.
+
+The Kubernetes manifests, overlays, and topology mirror what a real multi-region deployment looks like — the only difference between the two modes is scale.
 
 ## Architecture
 
@@ -60,48 +67,81 @@ brew install docker kind kubectl kustomize
 brew install kubeconform kube-linter
 ```
 
-Docker Desktop must be running with **at least 8 GiB of memory** allocated (Settings → Resources).
+Docker Desktop must be running with **at least 5 GiB of memory allocated for single-cluster mode, or 8 GiB for full multi-cluster mode** (Settings → Resources).
 
-**Run it:**
+### Single-cluster mode (`make demo-single`) — recommended
 
 ```bash
 git clone https://github.com/Kanim21/omni-obs-platform.git
 cd omni-obs-platform
+make demo-single
+```
+
+That command runs preflight checks, creates one kind cluster, deploys the full stack (OTel + Prometheus + Thanos sidecar + MinIO + Thanos Query + Grafana + telemetrygen load generator), and is ready in about 3 minutes.
+
+**Open Grafana:**
+
+```bash
+kubectl -n omni-obs port-forward svc/grafana 3000:3000
+open http://localhost:3000   # admin / admin (demo only)
+```
+
+**Confirm the pipeline directly:**
+
+```bash
+kubectl -n omni-obs port-forward svc/thanos-query 9090:9090
+open http://localhost:9090/stores
+```
+
+You should see one sidecar listed with the full retention window. Run any PromQL query (`up`, `rate(otelcol_receiver_accepted_metric_points_total[5m])`) in the Graph tab to confirm data is flowing.
+
+**Tear down:**
+
+```bash
+make teardown-single
+```
+
+### Multi-cluster mode (`make demo`)
+
+For machines with 8+ GiB Docker memory:
+
+```bash
 make demo
 ```
 
-That single command runs preflight checks, creates the four `kind` clusters, deploys the stack, and verifies the federation. Total time: ~5 minutes on a recent MacBook.
+Spins up four kind clusters (cluster-aws, cluster-azure, cluster-gcp, cluster-central) and federates them. Total time: ~5 minutes.
 
-**Open Grafana:** http://localhost:3000 (login: `admin` / `admin`, demo only). The "Multi-Cluster Overview" dashboard shows live OTLP ingestion rates broken down by cluster.
-
-**Confirm the federation directly:**
+**Confirm the federation:**
 
 ```bash
 kubectl --context kind-cluster-central -n omni-obs port-forward svc/thanos-query 9090:9090
 open http://localhost:9090/stores
 ```
 
-You should see three sidecars listed (one per edge cluster) plus 1y of effective data range.
+You should see three sidecars listed (one per edge cluster) plus the full retention window.
 
 **Tear down:**
 
 ```bash
-make clean
+make teardown
 ```
 
 ## Repo layout
 
 ```
 .
-├── Makefile                        # `make demo`, `make clean`, `make validate`
+├── Makefile                        # demo-single, demo, teardown, validate, etc.
 ├── kubernetes/
 │   ├── base/                       # shared resources (namespace)
 │   ├── components/
 │   │   ├── edge/                   # OTel + Prometheus + Thanos sidecar + load gen
-│   │   └── central/                # Thanos Query + Grafana
+│   │   ├── central/                # Thanos Query + Grafana
+│   │   ├── minio/                  # object storage for single-cluster mode
+│   │   └── thanos/                 # Thanos Query for single-cluster mode
 │   └── overlays/
 │       ├── aws/  azure/  gcp/      # edge overlays — inject cluster labels
-│       └── central/                # query-tier overlay — wires sidecar endpoints
+│       ├── central/                # query-tier overlay — wires sidecar endpoints
+│       └── single/                 # single-cluster overlay — full stack on one node
 ├── scripts/
 │   ├── preflight.sh                # tool/docker/port checks
 │   ├── create-clusters.sh          # 4 kind clusters
@@ -132,6 +172,7 @@ Things that are **demo simplifications** (each linked to what would change for p
 | Demo                                             | Production                                                 |
 | ------------------------------------------------ | ---------------------------------------------------------- |
 | Sidecar reachable via NodePort over Docker net   | Private LoadBalancer + mTLS, or Thanos Receive             |
+| MinIO single-node, in-cluster                    | S3 / GCS / Azure Blob with lifecycle policies              |
 | 2-hour Prometheus retention, no object storage   | Thanos sidecar + S3/GCS/Azure Blob, Compactor for downsampling |
 | Grafana in-pod password = `admin`                | OIDC SSO, secret in Vault/External Secrets                 |
 | Single Thanos Query, no caching                  | Query Frontend + cache, multiple Query replicas           |
@@ -149,6 +190,11 @@ make verify            # end-to-end: queries Thanos, asserts all 3 clusters repo
 
 CI (`.github/workflows/ci.yml`) runs `make validate` on every push and PR.
 
+## Releases
+
+- [v0.3.0](https://github.com/Kanim21/omni-obs-platform/releases/tag/v0.3.0) — single-cluster mode with Thanos + MinIO + Grafana
+- [v0.1.0](https://github.com/Kanim21/omni-obs-platform/releases/tag/v0.1.0) — initial multi-cluster federation
+
 ## Documentation
 
 - [`QUICKSTART.md`](QUICKSTART.md) — step-by-step walkthrough with troubleshooting
@@ -164,4 +210,4 @@ MIT. See [LICENSE](LICENSE).
 
 ---
 
-_Last verified working: 2026-05-13 · macOS 26.2 · Docker 29.3.1 · kind v0.31.0 · kubectl v1.36.0 · kustomize v5.8.1_
+_Single-cluster mode last verified: 2026-05-15 · macOS 26.2 · Docker 29.3.1 · kind v0.31.0 · kubectl v1.36.0 · kustomize v5.8.1_
