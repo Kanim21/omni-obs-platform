@@ -45,11 +45,15 @@ log_ok "ArgoCD component rendered."
 
 log_step "kubeconform schema validation"
 if command -v kubeconform >/dev/null 2>&1; then
-  ALL_RENDERS=("${OVERLAYS[@]}" argocd)
-  for o in "${ALL_RENDERS[@]}"; do
+  for o in "${OVERLAYS[@]}"; do
     log_info "kubeconform: $o"
     kubeconform -strict -summary -schema-location default "$RENDER_DIR/$o.yaml"
   done
+  # ArgoCD output includes CRD definitions and custom resources whose schemas are
+  # not in the default schema store; skip strict mode for this file only.
+  log_info "kubeconform: argocd (ignore-missing-schemas)"
+  kubeconform -strict -ignore-missing-schemas -summary \
+    -schema-location default "$RENDER_DIR/argocd.yaml"
   log_ok "kubeconform passed for all overlays."
 else
   log_warn "kubeconform not installed — skipping. Install: brew install kubeconform"
