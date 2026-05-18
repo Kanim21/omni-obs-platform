@@ -96,6 +96,7 @@ RENDER_DIR="$(mktemp -d)"
 trap 'rm -rf "$RENDER_DIR"' EXIT
 cp -R "$REPO_ROOT/kubernetes" "$RENDER_DIR/"
 CENTRAL_KUST="$RENDER_DIR/kubernetes/overlays/central/kustomization.yaml"
+# shellcheck disable=SC2154  # ENDPOINT_{aws,azure,gcp} set in discovery loop above
 sed -i.bak \
   -e "s|__AWS_SIDECAR_ENDPOINT__|${ENDPOINT_aws}|g" \
   -e "s|__AZURE_SIDECAR_ENDPOINT__|${ENDPOINT_azure}|g" \
