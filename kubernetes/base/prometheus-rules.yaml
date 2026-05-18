@@ -1,0 +1,143 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules
+  namespace: omni-obs
+data:
+  slo-burn-rates.yaml: |
+    groups:
+      # -----------------------------------------------------------------------
+      # SLO: ingestion-availability — 99.9% over 30d (error budget = 0.1%)
+      # Tracks OTel Collector accepting OTLP exports without erroring.
+      # -----------------------------------------------------------------------
+      - name: slo.ingestion-availability
+        rules:
+          - record: job:otelcol_ingestion_error_rate:ratio_rate5m
+            expr: |
+              sum(rate(otelcol_receiver_refused_metric_points{job="otel-collector-self"}[5m]))
+              / (
+                sum(rate(otelcol_receiver_accepted_metric_points{job="otel-collector-self"}[5m]))
+                + sum(rate(otelcol_receiver_refused_metric_points{job="otel-collector-self"}[5m]))
+              )
+          - record: job:otelcol_ingestion_error_rate:ratio_rate1h
+            expr: |
+              sum(rate(otelcol_receiver_refused_metric_points{job="otel-collector-self"}[1h]))
+              / (
+                sum(rate(otelcol_receiver_accepted_metric_points{job="otel-collector-self"}[1h]))
+                + sum(rate(otelcol_receiver_refused_metric_points{job="otel-collector-self"}[1h]))
+              )
+          - record: job:otelcol_ingestion_error_rate:ratio_rate6h
+            expr: |
+              sum(rate(otelcol_receiver_refused_metric_points{job="otel-collector-self"}[6h]))
+              / (
+                sum(rate(otelcol_receiver_accepted_metric_points{job="otel-collector-self"}[6h]))
+                + sum(rate(otelcol_receiver_refused_metric_points{job="otel-collector-self"}[6h]))
+              )
+          # Fast burn: 14.4× budget consumed in 1h window → page (SEV2)
+          - alert: IngestionAvailabilityFastBurn
+            expr: |
+              job:otelcol_ingestion_error_rate:ratio_rate1h > (14.4 * 0.001)
+              and
+              job:otelcol_ingestion_error_rate:ratio_rate5m > (14.4 * 0.001)
+            for: 2m
+            labels:
+              severity: page
+              slo: ingestion-availability
+            annotations:
+              summary: "OTel ingestion burning error budget at 14.4× (fast burn)"
+              description: >
+                1h error rate {{ $value | humanizePercentage }} exceeds 14.4× the
+                ingestion-availability error budget (0.1%). At this rate the 30-day
+                budget is exhausted in ~2 hours. Runbook: governance/runbooks/high-error-rate.md
+          # Slow burn: 6× budget consumed in 6h window → ticket (SEV3)
+          - alert: IngestionAvailabilitySlowBurn
+            expr: |
+              job:otelcol_ingestion_error_rate:ratio_rate6h > (6 * 0.001)
+              and
+              job:otelcol_ingestion_error_rate:ratio_rate1h > (6 * 0.001)
+            for: 15m
+            labels:
+              severity: ticket
+              slo: ingestion-availability
+            annotations:
+              summary: "OTel ingestion burning error budget at 6× (slow burn)"
+              description: >
+                6h error rate {{ $value | humanizePercentage }} exceeds 6× the
+                ingestion-availability error budget (0.1%). At this rate the 30-day
+                budget is exhausted in ~5 days.
+
+      # -----------------------------------------------------------------------
+      # SLO: query-success-rate — 99.5% over 30d (error budget = 0.5%)
+      # Tracks Thanos Query returning non-error responses.
+      # -----------------------------------------------------------------------
+      - name: slo.query-success-rate
+        rules:
+          - record: job:thanos_query_error_rate:ratio_rate5m
+            expr: |
+              sum(rate(http_requests_total{job="thanos-query", code=~"5.."}[5m]))
+              / sum(rate(http_requests_total{job="thanos-query"}[5m]))
+          - record: job:thanos_query_error_rate:ratio_rate1h
+            expr: |
+              sum(rate(http_requests_total{job="thanos-query", code=~"5.."}[1h]))
+              / sum(rate(http_requests_total{job="thanos-query"}[1h]))
+          - record: job:thanos_query_error_rate:ratio_rate6h
+            expr: |
+              sum(rate(http_requests_total{job="thanos-query", code=~"5.."}[6h]))
+              / sum(rate(http_requests_total{job="thanos-query"}[6h]))
+          # Fast burn: 14.4× budget consumed in 1h window → page (SEV2)
+          - alert: QuerySuccessRateFastBurn
+            expr: |
+              job:thanos_query_error_rate:ratio_rate1h > (14.4 * 0.005)
+              and
+              job:thanos_query_error_rate:ratio_rate5m > (14.4 * 0.005)
+            for: 2m
+            labels:
+              severity: page
+              slo: query-success-rate
+            annotations:
+              summary: "Thanos Query burning error budget at 14.4× (fast burn)"
+              description: >
+                1h error rate {{ $value | humanizePercentage }} exceeds 14.4× the
+                query-success-rate error budget (0.5%). See runbook:
+                governance/runbooks/high-error-rate.md
+          # Slow burn: 6× budget consumed in 6h window → ticket (SEV3)
+          - alert: QuerySuccessRateSlowBurn
+            expr: |
+              job:thanos_query_error_rate:ratio_rate6h > (6 * 0.005)
+              and
+              job:thanos_query_error_rate:ratio_rate1h > (6 * 0.005)
+            for: 15m
+            labels:
+              severity: ticket
+              slo: query-success-rate
+            annotations:
+              summary: "Thanos Query burning error budget at 6× (slow burn)"
+              description: >
+                6h error rate {{ $value | humanizePercentage }} exceeds 6× the
+                query-success-rate error budget (0.5%).
+
+      # -----------------------------------------------------------------------
+      # SLO: query-latency-p99 — p99 < 5s for 99% of windows over 30d
+      # -----------------------------------------------------------------------
+      - name: slo.query-latency-p99
+        rules:
+          - alert: QueryLatencyP99High
+            expr: |
+              histogram_quantile(0.99,
+                sum by (le) (
+                  rate(http_request_duration_seconds_bucket{
+                    job="thanos-query",
+                    handler="/api/v1/query"
+                  }[5m])
+                )
+              ) > 5
+            for: 5m
+            labels:
+              severity: ticket
+              slo: query-latency-p99
+            annotations:
+              summary: "Thanos Query p99 latency exceeds 5s SLO threshold"
+              description: >
+                p99 instant-query latency is {{ $value | humanizeDuration }},
+                above the 5s target. Check /stores for degraded sidecars;
+                a slow edge sidecar is the most common cause.
