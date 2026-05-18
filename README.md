@@ -109,6 +109,12 @@ A declarative alternative to `make demo-single`: instead of the script applying 
 make demo-single-gitops
 ```
 
+![ArgoCD Applications dashboard - omni-obs Synced + Healthy](docs/images/argocd-application-list.png)
+
+The resource tree view confirms ArgoCD reconciled every workload from the pinned Git commit:
+
+![ArgoCD resource tree - every workload Synced + Healthy, commit-pinned to main](docs/images/argocd-resource-tree.png)
+
 This runs the same preflight and cluster-creation steps, then:
 1. Installs ArgoCD v3.4.2 into the `argocd` namespace (with resource limits sized for 5 GiB Docker).
 2. Applies the `Application` CRD that points ArgoCD at `kubernetes/overlays/single` on `main`.
