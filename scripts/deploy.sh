@@ -72,14 +72,35 @@ if [[ "$MODE" == single ]]; then
     }
 
     log_step "Installing ArgoCD v3.4.2 into cluster-local"
-    kubectl --context "$CTX" apply -k "$ARGOCD_COMPONENT"
+    # Two-phase server-side apply to work around two bugs with a single apply -k:
+    #
+    # Bug 1 — CRD/CR race: the Application CR and its CRD are in the same
+    #   kustomization, so the API server rejects the CR before the CRD is
+    #   registered.  Phase 1 applies everything (CRDs succeed; Application CR may
+    #   fail), kubectl wait confirms CRDs are Established, then phase 2 applies
+    #   everything again and the CR succeeds.
+    #
+    # Bug 2 — 256 KB annotation limit: the applicationsets CRD exceeds the maximum
+    #   size for the last-applied-configuration annotation used by client-side apply.
+    #   --server-side eliminates that annotation entirely.
+    log_info "phase 1/2: applying CRDs and workloads (Application CR error here is expected)..."
+    kubectl --context "$CTX" apply --server-side --force-conflicts -k "$ARGOCD_COMPONENT" || true
+
+    log_info "waiting for ArgoCD CRDs to be Established..."
+    kubectl --context "$CTX" wait --for=condition=Established --timeout=60s \
+      crd/applications.argoproj.io \
+      crd/appprojects.argoproj.io \
+      crd/applicationsets.argoproj.io
+
+    log_info "phase 2/2: re-applying to create Application CR (CRDs now registered)..."
+    kubectl --context "$CTX" apply --server-side --force-conflicts -k "$ARGOCD_COMPONENT"
 
     log_step "Waiting for argocd-server to be Available"
     kubectl config use-context "$CTX" >/dev/null
     wait_deployment argocd argocd-server 300s
 
     log_step "Waiting for ArgoCD Application 'omni-obs' to sync"
-    wait_argocd_app omni-obs 300s
+    wait_argocd_app omni-obs 300
 
     log_step "Done"
     cat <<EOF
