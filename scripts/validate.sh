@@ -37,9 +37,16 @@ for o in "${OVERLAYS[@]}"; do
 done
 log_ok "All overlays rendered."
 
+log_step "Rendering ArgoCD component"
+ARGOCD_OUT="$RENDER_DIR/argocd.yaml"
+log_info "kustomize build components/argocd -> $ARGOCD_OUT"
+kustomize build "$REPO_ROOT/kubernetes/components/argocd" > "$ARGOCD_OUT"
+log_ok "ArgoCD component rendered."
+
 log_step "kubeconform schema validation"
 if command -v kubeconform >/dev/null 2>&1; then
-  for o in "${OVERLAYS[@]}"; do
+  ALL_RENDERS=("${OVERLAYS[@]}" argocd)
+  for o in "${ALL_RENDERS[@]}"; do
     log_info "kubeconform: $o"
     kubeconform -strict -summary -schema-location default "$RENDER_DIR/$o.yaml"
   done
@@ -50,7 +57,8 @@ fi
 
 log_step "kube-linter best-practice checks"
 if command -v kube-linter >/dev/null 2>&1; then
-  for o in "${OVERLAYS[@]}"; do
+  ALL_RENDERS=("${OVERLAYS[@]}" argocd)
+  for o in "${ALL_RENDERS[@]}"; do
     log_info "kube-linter: $o"
     kube-linter lint --config "$REPO_ROOT/.kube-linter.yaml" "$RENDER_DIR/$o.yaml" || {
       log_warn "kube-linter reported issues in $o"

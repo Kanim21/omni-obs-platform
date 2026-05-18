@@ -18,16 +18,100 @@ source "$SCRIPT_DIR/lib/common.sh"
 require_cmds kubectl kustomize docker
 
 MODE=multi
+ARGOCD=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --single) MODE=single; shift ;;
-    *) die "Unknown flag: $1 (supported: --single)" ;;
+    --argocd) ARGOCD=true; shift ;;
+    *) die "Unknown flag: $1 (supported: --single, --argocd)" ;;
   esac
 done
+
+if [[ "$ARGOCD" == true && "$MODE" != single ]]; then
+  die "--argocd requires --single (ArgoCD GitOps mode is single-cluster only)"
+fi
 
 if [[ "$MODE" == single ]]; then
   CTX=kind-cluster-local
   OVERLAY="$REPO_ROOT/kubernetes/overlays/single"
+  ARGOCD_COMPONENT="$REPO_ROOT/kubernetes/components/argocd"
+
+  if [[ "$ARGOCD" == true ]]; then
+    # --- GitOps mode: ArgoCD pulls from git and reconciles the single overlay ---
+
+    # Wait for an ArgoCD Application to reach Synced+Healthy.
+    # Polls every 10s; prints debug info and returns non-zero on timeout.
+    wait_argocd_app() {
+      local app="$1" timeout_s="${2:-300}"
+      local deadline=$(( $(date +%s) + timeout_s ))
+      log_info "waiting for Application/$app to be Synced+Healthy (timeout ${timeout_s}s)..."
+      while (( $(date +%s) < deadline )); do
+        local sync health
+        sync="$(kubectl -n argocd get application "$app" \
+          -o jsonpath='{.status.sync.status}' 2>/dev/null || true)"
+        health="$(kubectl -n argocd get application "$app" \
+          -o jsonpath='{.status.health.status}' 2>/dev/null || true)"
+        if [[ "$sync" == Synced && "$health" == Healthy ]]; then
+          log_ok "Application/$app is Synced + Healthy."
+          return 0
+        fi
+        log_info "  sync=${sync:-<pending>} health=${health:-<pending>} — retrying in 10s..."
+        sleep 10
+      done
+      log_error "Application/$app did not reach Synced+Healthy within ${timeout_s}s."
+      log_error "--- kubectl describe application/$app ---"
+      kubectl -n argocd describe application "$app" >&2 || true
+      log_error "--- ArgoCD pods ---"
+      kubectl -n argocd get pods -o wide >&2 || true
+      log_error "--- Describe non-Ready ArgoCD pods ---"
+      kubectl -n argocd get pods --field-selector='status.phase!=Running' \
+        -o name 2>/dev/null | while read -r pod; do
+        kubectl -n argocd describe "$pod" >&2 || true
+      done
+      return 1
+    }
+
+    log_step "Installing ArgoCD v3.4.2 into cluster-local"
+    kubectl --context "$CTX" apply -k "$ARGOCD_COMPONENT"
+
+    log_step "Waiting for argocd-server to be Available"
+    kubectl config use-context "$CTX" >/dev/null
+    wait_deployment argocd argocd-server 300s
+
+    log_step "Waiting for ArgoCD Application 'omni-obs' to sync"
+    wait_argocd_app omni-obs 300s
+
+    log_step "Done"
+    cat <<EOF
+
+GitOps deployment complete (single-cluster, ArgoCD mode).
+
+ArgoCD is now managing the omni-obs stack. Push to main and ArgoCD reconciles.
+
+ArgoCD UI:
+  kubectl --context $CTX -n argocd port-forward svc/argocd-server 8080:443
+  open https://localhost:8080
+  # username: admin
+  # password: kubectl -n argocd get secret argocd-initial-admin-secret \
+  #             -o jsonpath='{.data.password}' | base64 -d
+
+Grafana:       http://localhost:3000  (anonymous viewer; login: admin / admin)
+
+Thanos UI:
+  kubectl --context $CTX -n omni-obs port-forward svc/thanos-query 9090:9090
+  open http://localhost:9090/stores
+
+MinIO console (optional):
+  kubectl --context $CTX -n omni-obs port-forward svc/minio 9001:9001
+  open http://localhost:9001          # login: minio / minio123
+
+Tear down:  make teardown-single   (kind delete cluster removes everything, including ArgoCD)
+
+EOF
+    exit 0
+  fi
+
+  # --- Imperative mode (default): kubectl apply the single overlay directly ---
 
   log_step "Deploying single-cluster stack to $CTX"
   kubectl --context "$CTX" apply -k "$OVERLAY"

@@ -101,6 +101,58 @@ You should see one sidecar listed with the full retention window. Run any PromQL
 make teardown-single
 ```
 
+### GitOps mode (`make demo-single-gitops`)
+
+A declarative alternative to `make demo-single`: instead of the script applying manifests directly, ArgoCD is installed into the cluster and takes over reconciliation. Push to `main`; ArgoCD syncs; the cluster converges.
+
+```bash
+make demo-single-gitops
+```
+
+This runs the same preflight and cluster-creation steps, then:
+1. Installs ArgoCD v3.4.2 into the `argocd` namespace (with resource limits sized for 5 GiB Docker).
+2. Applies the `Application` CRD that points ArgoCD at `kubernetes/overlays/single` on `main`.
+3. Waits for the Application to reach **Synced + Healthy** before returning.
+
+**Open the ArgoCD UI:**
+
+```bash
+kubectl --context kind-cluster-local -n argocd port-forward svc/argocd-server 8080:443
+open https://localhost:8080    # accept the self-signed cert
+```
+
+Username: `admin`. Get the initial password:
+
+```bash
+kubectl --context kind-cluster-local -n argocd \
+  get secret argocd-initial-admin-secret \
+  -o jsonpath='{.data.password}' | base64 -d && echo
+```
+
+**Open Grafana** (same as imperative mode — ArgoCD put it there):
+
+```bash
+open http://localhost:3000   # admin / admin
+```
+
+**Make a change via GitOps:**
+
+```bash
+# Edit any file under kubernetes/overlays/single/ or kubernetes/base/
+git add -p && git commit -m "feat: ..." && git push
+# ArgoCD detects the change within ~3 minutes (default poll interval) and reconciles.
+```
+
+**Tear down:**
+
+```bash
+make teardown-single
+```
+
+`kind delete cluster --name cluster-local` removes the entire cluster — all Kubernetes resources, the `argocd` namespace, and all synced workloads are deleted with it. No host-side volumes or persistent state is left behind.
+
+**What a production version would add:** a real Git webhook so ArgoCD reconciles in seconds instead of polling; a private repo credential (SSH key or token stored in an `argocd` Secret); SSO via Dex; RBAC policies to restrict who can sync or delete Applications; Sealed Secrets or External Secrets for credential management; ArgoCD notifications to Slack on sync failures.
+
 ### Multi-cluster mode (`make demo`)
 
 For machines with 8+ GiB Docker memory:
@@ -134,6 +186,7 @@ make teardown
 ├── kubernetes/
 │   ├── base/                       # shared resources (namespace)
 │   ├── components/
+│   │   ├── argocd/                 # ArgoCD install (vendored v3.4.2) + Application CRD
 │   │   ├── edge/                   # OTel + Prometheus + Thanos sidecar + load gen
 │   │   ├── central/                # Thanos Query + Grafana
 │   │   ├── minio/                  # object storage for single-cluster mode
@@ -145,7 +198,8 @@ make teardown
 ├── scripts/
 │   ├── preflight.sh                # tool/docker/port checks
 │   ├── create-clusters.sh          # 4 kind clusters
-│   ├── deploy.sh                   # apply overlays, discover endpoints
+│   ├── deploy.sh                   # apply overlays (--single, --argocd flags)
+│   ├── update-argocd.sh            # re-vendor ArgoCD install.yaml at a new version
 │   ├── verify.sh                   # end-to-end smoke test
 │   ├── teardown.sh                 # delete all clusters
 │   ├── validate.sh                 # CI-style static validation
