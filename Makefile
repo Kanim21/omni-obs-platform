@@ -2,7 +2,8 @@
 SHELL := /usr/bin/env bash
 
 .PHONY: help preflight clusters deploy verify demo clean validate render fmt \
-        demo-single clean-single teardown teardown-single
+        demo-single demo-single-gitops update-argocd \
+        clean-single teardown teardown-single
 
 help: ## Show this help
 	@awk 'BEGIN{FS=":.*?## "} /^[a-zA-Z_-]+:.*?## /{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -26,6 +27,13 @@ demo: clusters deploy verify ## Full bootstrap: clusters + deploy + verify
 demo-single: preflight ## Single-cluster bootstrap — fits in 5 GB Docker (8 GB laptop)
 	@./scripts/create-clusters.sh --single
 	@./scripts/deploy.sh --single
+
+demo-single-gitops: preflight ## Single-cluster GitOps bootstrap — ArgoCD reconciles from git
+	@./scripts/create-clusters.sh --single
+	@./scripts/deploy.sh --single --argocd
+
+update-argocd: ## Re-download vendored ArgoCD install.yaml from upstream (bump version in script first)
+	@./scripts/update-argocd.sh
 
 clean: ## Tear down all 4 kind clusters
 	@./scripts/teardown.sh
